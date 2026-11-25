@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sanakoeharjoittelu</title>
+    <!-- Tuodaan Tesseract.js kuvantunnistusta (OCR) varten -->
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -28,7 +30,7 @@
             width: 100%;
             text-align: center;
         }
-        button {
+        button, .file-btn {
             background-color: #3b82f6;
             color: white;
             border: none;
@@ -37,12 +39,14 @@
             border-radius: 8px;
             cursor: pointer;
             margin: 8px;
+            display: inline-block;
+            text-decoration: none;
             transition: background-color 0.2s, transform 0.1s;
         }
-        button:hover {
+        button:hover, .file-btn:hover {
             background-color: #2563eb;
         }
-        button:active {
+        button:active, .file-btn:active {
             transform: scale(0.98);
         }
         button.secondary {
@@ -57,6 +61,12 @@
         button.mic-btn.recording {
             background-color: #ef4444;
             animation: pulse 1.2s infinite;
+        }
+        .camera-btn {
+            background-color: #8b5cf6;
+        }
+        .camera-btn:hover {
+            background-color: #7c3aed;
         }
         @keyframes pulse {
             0% { opacity: 1; }
@@ -158,13 +168,19 @@
             <button class="secondary" onclick="goHome()">← Takaisin</button>
         </div>
 
-        <!-- 3. SANOJEN SYÖTTÖ -->
+        <!-- 3. SANOJEN SYÖTTÖ & KUVA -->
         <div id="view-input" class="hidden">
             <h2 id="input-title">Syötä sanat</h2>
-            <p id="input-instructions">Kirjoita harjoiteltavat sanat (erota pilkulla tai rivinvaihdolla):</p>
+            <p id="input-instructions">Kirjoita tai ota kuva sanalistasta:</p>
+            
+            <!-- Kameran / kuvan latauksen nappi -->
+            <label for="image-input" class="file-btn camera-btn">📸 Ota kuva tai lataa kuva kirjasta</label>
+            <input type="file" id="image-input" accept="image/*" capture="environment" class="hidden" onchange="handleImageUpload(event)">
+
             <textarea id="words-textarea" rows="5" placeholder="esim. football, basketball, floorball"></textarea>
+            
             <button id="start-btn" onclick="prepareCards()">Aloita harjoittelu</button>
-            <p id="loading-msg" class="hidden">Käännetään sanoja, odota hetki...</p>
+            <p id="loading-msg" class="hidden">Käsitellään kuvaa ja käännetään sanoja, odota hetki...</p>
             <br>
             <button class="secondary" onclick="backToDirection()">← Takaisin</button>
         </div>
@@ -206,13 +222,12 @@
     </div>
 
     <script>
-        let selectedLang = 'en'; // 'en' tai 'sv'
-        let direction = 'fi-to-target'; // 'fi-to-target' tai 'target-to-fi'
+        let selectedLang = 'en'; 
+        let direction = 'fi-to-target'; 
         let cardsQueue = [];
         let currentCard = null;
         let isFlipped = false;
 
-        // Näkymien vaihto
         function showView(viewId) {
             document.querySelectorAll('.container > div').forEach(div => div.classList.add('hidden'));
             document.getElementById(viewId).classList.remove('hidden');
@@ -241,19 +256,46 @@
             const example = selectedLang === 'en' ? 'esim. football, basketball, floorball' : 'esim. fotboll, basket, innebandy';
             
             document.getElementById('input-instructions').innerText = 
-                `Kirjoita sanat ${langName} (erota pilkulla tai rivinvaihdolla):`;
+                `Kirjoita sanat ${langName} tai ota kuva kirjasta:`;
             document.getElementById('words-textarea').placeholder = example;
             document.getElementById('words-textarea').value = '';
             showView('view-input');
         }
 
-        // Sanojen kääntäminen rajapinnan avulla
+        // Käsittele käyttäjän ottama/lataama kuva (OCR - Tekstintunnistus)
+        async function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const loadingMsg = document.getElementById('loading-msg');
+            loadingMsg.innerText = "Luetaan sanoja kuvasta (OCR)... Odota hetki.";
+            loadingMsg.classList.remove('hidden');
+
+            try {
+                // Tunnistetaan kieli Tesseractilla (valitaan englanti/ruotsi + suomi)
+                const ocrLang = selectedLang === 'en' ? 'eng' : 'swe';
+                
+                const result = await Tesseract.recognize(
+                    file,
+                    ocrLang + '+fin',
+                    { logger: m => console.log(m) }
+                );
+
+                // Asetetaan tunnistettu teksti suoraan tekstikenttään, jotta sen voi tarvittaessa tarkistaa
+                document.getElementById('words-textarea').value = result.data.text.trim();
+                loadingMsg.classList.add('hidden');
+            } catch (error) {
+                console.error("Kuvantunnistusvirhe:", error);
+                alert("Tekstin lukeminen kuvasta epäonnistui. Kokeile uudelleen tai kirjoita sanat käsin.");
+                loadingMsg.classList.add('hidden');
+            }
+        }
+
         async function translateWord(word, sourceLang, targetLang) {
             const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=${sourceLang}|${targetLang}`;
             try {
                 const response = await fetch(url);
                 const data = await response.json();
-                // Otetaan käännös ja siivotaan mahdolliset ylimääräiset merkit
                 return data.responseData.translatedText.toLowerCase().trim();
             } catch (error) {
                 console.error("Käännösvirhe:", error);
@@ -261,35 +303,31 @@
             }
         }
 
-        // Korttien valmistelu ja sekoitus
         async function prepareCards() {
             const rawText = document.getElementById('words-textarea').value;
-            // Jaetaan sanat pilkun tai rivinvaihdon kohdalta
             const words = rawText.split(/[\n,]+/).map(w => w.trim()).filter(w => w.length > 0);
 
             if (words.length === 0) {
-                alert("Kirjoita ensin vähintään yksi sana!");
+                alert("Ei löydy sanoja! Kirjoita tai ota kuva ensin.");
                 return;
             }
 
             document.getElementById('start-btn').disabled = true;
+            document.getElementById('loading-msg').innerText = "Käännetään sanoja, odota hetki...";
             document.getElementById('loading-msg').classList.remove('hidden');
 
             cardsQueue = [];
 
             for (let word of words) {
                 const cleanTargetWord = word.toLowerCase();
-                // Käännetään vieraskielinen sana suomeksi
                 const finnishTranslation = await translateWord(cleanTargetWord, selectedLang, 'fi');
                 
                 if (direction === 'fi-to-target') {
-                    // Kysytään suomeksi, vastataan vieraalla kielellä
                     cardsQueue.push({
                         question: finnishTranslation,
                         answer: cleanTargetWord
                     });
                 } else {
-                    // Kysytään vieraalla kielellä, vastataan suomeksi
                     cardsQueue.push({
                         question: cleanTargetWord,
                         answer: finnishTranslation
@@ -297,7 +335,6 @@
                 }
             }
 
-            // Sekoitetaan kortit satunnaiseen järjestykseen
             cardsQueue.sort(() => Math.random() - 0.5);
 
             document.getElementById('start-btn').disabled = false;
@@ -316,7 +353,6 @@
             isFlipped = false;
             currentCard = cardsQueue[0];
 
-            // Nollataan kortin ulkoasu
             const cardEl = document.getElementById('flashcard');
             const backEl = document.getElementById('card-answer');
             cardEl.classList.remove('flipped');
@@ -349,7 +385,6 @@
             const cardEl = document.getElementById('flashcard');
             const backEl = document.getElementById('card-answer');
 
-            // Poistetaan nykyinen kortti jonon kärjestä
             cardsQueue.shift();
 
             if (userAnswer === currentCard.answer) {
@@ -358,11 +393,9 @@
             } else {
                 backEl.classList.add('wrong');
                 backEl.innerHTML = `❌ Väärin!<br><span style="font-size: 16px; font-weight: normal; margin-top: 8px;">Oikea vastaus: <strong>${currentCard.answer}</strong></span>`;
-                // Laitetaan väärin mennyt kortti takaisin jonon loppuun!
                 cardsQueue.push(currentCard);
             }
 
-            // Käännetään kortti
             cardEl.classList.add('flipped');
 
             document.getElementById('answer-controls').classList.add('hidden');
@@ -373,7 +406,6 @@
             loadNextCard();
         }
 
-        // Äänivastaaminen (Web Speech API)
         function startSpeech() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
@@ -383,7 +415,6 @@
 
             const recognition = new SpeechRecognition();
             
-            // Asetetaan tunnistuskieli sen mukaan, millä kielellä vastataan
             if (direction === 'fi-to-target') {
                 recognition.lang = selectedLang === 'en' ? 'en-US' : 'sv-SE';
             } else {
@@ -396,14 +427,13 @@
 
             recognition.onresult = function(event) {
                 let transcript = event.results[0][0].transcript;
-                // Poistetaan mahdollinen piste lopusta, jonka puheentunnistus joskus lisää
                 transcript = transcript.replace(/[.,!?]+$/, '').trim().toLowerCase();
                 document.getElementById('user-answer').value = transcript;
                 checkAnswer();
             };
 
             recognition.onerror = function(event) {
-                alert("Ääntä ei tunnistettu. Varmista, että mikrofonille on annettu lupa.");
+                alert("Ääntä ei tunnistettu. Varmista mikrofonin luvat.");
             };
 
             recognition.onend = function() {
