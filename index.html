@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sanakoeharjoittelu</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f4f8;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 30px 20px;
+            margin: 0;
+        }
+        h1, h2 {
+            color: #1e293b;
+            text-align: center;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        button {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 8px;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        button:hover {
+            background-color: #2563eb;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        button.secondary {
+            background-color: #64748b;
+        }
+        button.secondary:hover {
+            background-color: #475569;
+        }
+        button.mic-btn {
+            background-color: #10b981;
+        }
+        button.mic-btn.recording {
+            background-color: #ef4444;
+            animation: pulse 1.2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+        textarea, input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            margin: 12px 0;
+            border: 2px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        .hidden {
+            display: none !important;
+        }
+
+        /* Kääntökortin tyylit */
+        .flashcard-container {
+            perspective: 1000px;
+            width: 100%;
+            height: 180px;
+            margin: 20px auto;
+        }
+        .flashcard {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+        .flashcard.flipped {
+            transform: rotateY(180deg);
+        }
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            padding: 20px;
+            box-sizing: border-box;
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        .card-front {
+            background-color: #e0f2fe;
+            color: #0369a1;
+            border: 2px solid #bae6fd;
+        }
+        .card-back {
+            background-color: #f8fafc;
+            color: #0f172a;
+            transform: rotateY(180deg);
+            border: 2px solid #cbd5e1;
+        }
+        .card-back.correct {
+            background-color: #dcfce7;
+            border-color: #86efac;
+            color: #166534;
+        }
+        .card-back.wrong {
+            background-color: #fee2e2;
+            border-color: #fca5a5;
+            color: #991b1b;
+        }
+        .status-text {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- 1. PÄÄVÄLILEHTI -->
+        <div id="view-main">
+            <h1>Sanakoeharjoittelu</h1>
+            <p>Valitse kieli, jota haluat harjoitella:</p>
+            <button onclick="selectLanguage('en')">Sanakoe Englanti</button>
+            <button onclick="selectLanguage('sv')">Sanakoe Ruotsi</button>
+        </div>
+
+        <!-- 2. SUUNNAN VALINTA -->
+        <div id="view-direction" class="hidden">
+            <h2 id="lang-title">Englanti</h2>
+            <p>Valitse käännössuunta:</p>
+            <button id="btn-fi-to-target" onclick="selectDirection('fi-to-target')">Suomi - Englanti</button>
+            <button id="btn-target-to-fi" onclick="selectDirection('target-to-fi')">Englanti - Suomi</button>
+            <br><br>
+            <button class="secondary" onclick="goHome()">← Takaisin</button>
+        </div>
+
+        <!-- 3. SANOJEN SYÖTTÖ -->
+        <div id="view-input" class="hidden">
+            <h2 id="input-title">Syötä sanat</h2>
+            <p id="input-instructions">Kirjoita harjoiteltavat sanat (erota pilkulla tai rivinvaihdolla):</p>
+            <textarea id="words-textarea" rows="5" placeholder="esim. football, basketball, floorball"></textarea>
+            <button id="start-btn" onclick="prepareCards()">Aloita harjoittelu</button>
+            <p id="loading-msg" class="hidden">Käännetään sanoja, odota hetki...</p>
+            <br>
+            <button class="secondary" onclick="backToDirection()">← Takaisin</button>
+        </div>
+
+        <!-- 4. KÄÄNTÖKORTTIHARJOITTELU -->
+        <div id="view-practice" class="hidden">
+            <div class="status-text" id="progress-text">Sana 1 / 3</div>
+            
+            <div class="flashcard-container">
+                <div class="flashcard" id="flashcard">
+                    <div class="card-face card-front" id="card-question">
+                        <!-- Kysyttävä sana tulee tähän -->
+                    </div>
+                    <div class="card-face card-back" id="card-answer">
+                        <!-- Oikea vastaus tulee tähän -->
+                    </div>
+                </div>
+            </div>
+
+            <div id="answer-controls">
+                <input type="text" id="user-answer" placeholder="Kirjoita vastaus tähän..." onkeypress="handleKeyPress(event)">
+                <div>
+                    <button onclick="checkAnswer()">Tarkista</button>
+                    <button class="mic-btn" id="mic-btn" onclick="startSpeech()">🎤 Vastaa äänellä</button>
+                </div>
+            </div>
+
+            <div id="next-controls" class="hidden">
+                <button onclick="nextCard()">Seuraava kortti →</button>
+            </div>
+        </div>
+
+        <!-- 5. VALMIS -->
+        <div id="view-done" class="hidden">
+            <h2>Hienoa työtä! 🎉</h2>
+            <p>Olet saanut kaikki sanat oikein!</p>
+            <button onclick="goHome()">Palaa alkuun</button>
+        </div>
+    </div>
+
+    <script>
+        let selectedLang = 'en'; // 'en' tai 'sv'
+        let direction = 'fi-to-target'; // 'fi-to-target' tai 'target-to-fi'
+        let cardsQueue = [];
+        let currentCard = null;
+        let isFlipped = false;
+
+        // Näkymien vaihto
+        function showView(viewId) {
+            document.querySelectorAll('.container > div').forEach(div => div.classList.add('hidden'));
+            document.getElementById(viewId).classList.remove('hidden');
+        }
+
+        function goHome() {
+            showView('view-main');
+        }
+
+        function selectLanguage(lang) {
+            selectedLang = lang;
+            const langName = lang === 'en' ? 'Englanti' : 'Ruotsi';
+            document.getElementById('lang-title').innerText = `Sanakoe ${langName}`;
+            document.getElementById('btn-fi-to-target').innerText = `Suomi - ${langName}`;
+            document.getElementById('btn-target-to-fi').innerText = `${langName} - Suomi`;
+            showView('view-direction');
+        }
+
+        function backToDirection() {
+            showView('view-direction');
+        }
+
+        function selectDirection(dir) {
+            direction = dir;
+            const langName = selectedLang === 'en' ? 'englanniksi' : 'ruotsiksi';
+            const example = selectedLang === 'en' ? 'esim. football, basketball, floorball' : 'esim. fotboll, basket, innebandy';
+            
+            document.getElementById('input-instructions').innerText = 
+                `Kirjoita sanat ${langName} (erota pilkulla tai rivinvaihdolla):`;
+            document.getElementById('words-textarea').placeholder = example;
+            document.getElementById('words-textarea').value = '';
+            showView('view-input');
+        }
+
+        // Sanojen kääntäminen rajapinnan avulla
+        async function translateWord(word, sourceLang, targetLang) {
+            const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=${sourceLang}|${targetLang}`;
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                // Otetaan käännös ja siivotaan mahdolliset ylimääräiset merkit
+                return data.responseData.translatedText.toLowerCase().trim();
+            } catch (error) {
+                console.error("Käännösvirhe:", error);
+                return "(käännös epäonnistui)";
+            }
+        }
+
+        // Korttien valmistelu ja sekoitus
+        async function prepareCards() {
+            const rawText = document.getElementById('words-textarea').value;
+            // Jaetaan sanat pilkun tai rivinvaihdon kohdalta
+            const words = rawText.split(/[\n,]+/).map(w => w.trim()).filter(w => w.length > 0);
+
+            if (words.length === 0) {
+                alert("Kirjoita ensin vähintään yksi sana!");
+                return;
+            }
+
+            document.getElementById('start-btn').disabled = true;
+            document.getElementById('loading-msg').classList.remove('hidden');
+
+            cardsQueue = [];
+
+            for (let word of words) {
+                const cleanTargetWord = word.toLowerCase();
+                // Käännetään vieraskielinen sana suomeksi
+                const finnishTranslation = await translateWord(cleanTargetWord, selectedLang, 'fi');
+                
+                if (direction === 'fi-to-target') {
+                    // Kysytään suomeksi, vastataan vieraalla kielellä
+                    cardsQueue.push({
+                        question: finnishTranslation,
+                        answer: cleanTargetWord
+                    });
+                } else {
+                    // Kysytään vieraalla kielellä, vastataan suomeksi
+                    cardsQueue.push({
+                        question: cleanTargetWord,
+                        answer: finnishTranslation
+                    });
+                }
+            }
+
+            // Sekoitetaan kortit satunnaiseen järjestykseen
+            cardsQueue.sort(() => Math.random() - 0.5);
+
+            document.getElementById('start-btn').disabled = false;
+            document.getElementById('loading-msg').classList.add('hidden');
+
+            showView('view-practice');
+            loadNextCard();
+        }
+
+        function loadNextCard() {
+            if (cardsQueue.length === 0) {
+                showView('view-done');
+                return;
+            }
+
+            isFlipped = false;
+            currentCard = cardsQueue[0];
+
+            // Nollataan kortin ulkoasu
+            const cardEl = document.getElementById('flashcard');
+            const backEl = document.getElementById('card-answer');
+            cardEl.classList.remove('flipped');
+            backEl.classList.remove('correct', 'wrong');
+
+            document.getElementById('progress-text').innerText = `Kortteja jäljellä: ${cardsQueue.length}`;
+            document.getElementById('card-question').innerText = currentCard.question;
+            document.getElementById('user-answer').value = '';
+            
+            document.getElementById('answer-controls').classList.remove('hidden');
+            document.getElementById('next-controls').classList.add('hidden');
+            document.getElementById('user-answer').focus();
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !isFlipped) {
+                checkAnswer();
+            } else if (event.key === 'Enter' && isFlipped) {
+                nextCard();
+            }
+        }
+
+        function checkAnswer() {
+            if (isFlipped) return;
+
+            const userAnswer = document.getElementById('user-answer').value.trim().toLowerCase();
+            if (!userAnswer) return;
+
+            isFlipped = true;
+            const cardEl = document.getElementById('flashcard');
+            const backEl = document.getElementById('card-answer');
+
+            // Poistetaan nykyinen kortti jonon kärjestä
+            cardsQueue.shift();
+
+            if (userAnswer === currentCard.answer) {
+                backEl.classList.add('correct');
+                backEl.innerHTML = `✅ Oikein!<br><span style="font-size: 18px; margin-top: 8px;">${currentCard.answer}</span>`;
+            } else {
+                backEl.classList.add('wrong');
+                backEl.innerHTML = `❌ Väärin!<br><span style="font-size: 16px; font-weight: normal; margin-top: 8px;">Oikea vastaus: <strong>${currentCard.answer}</strong></span>`;
+                // Laitetaan väärin mennyt kortti takaisin jonon loppuun!
+                cardsQueue.push(currentCard);
+            }
+
+            // Käännetään kortti
+            cardEl.classList.add('flipped');
+
+            document.getElementById('answer-controls').classList.add('hidden');
+            document.getElementById('next-controls').classList.remove('hidden');
+        }
+
+        function nextCard() {
+            loadNextCard();
+        }
+
+        // Äänivastaaminen (Web Speech API)
+        function startSpeech() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert("Selaimesi ei tue puheentunnistusta. Kokeile Google Chromea tai Microsoft Edgeä.");
+                return;
+            }
+
+            const recognition = new SpeechRecognition();
+            
+            // Asetetaan tunnistuskieli sen mukaan, millä kielellä vastataan
+            if (direction === 'fi-to-target') {
+                recognition.lang = selectedLang === 'en' ? 'en-US' : 'sv-SE';
+            } else {
+                recognition.lang = 'fi-FI';
+            }
+
+            const micBtn = document.getElementById('mic-btn');
+            micBtn.classList.add('recording');
+            micBtn.innerText = "🎤 Kuunnellaan...";
+
+            recognition.onresult = function(event) {
+                let transcript = event.results[0][0].transcript;
+                // Poistetaan mahdollinen piste lopusta, jonka puheentunnistus joskus lisää
+                transcript = transcript.replace(/[.,!?]+$/, '').trim().toLowerCase();
+                document.getElementById('user-answer').value = transcript;
+                checkAnswer();
+            };
+
+            recognition.onerror = function(event) {
+                alert("Ääntä ei tunnistettu. Varmista, että mikrofonille on annettu lupa.");
+            };
+
+            recognition.onend = function() {
+                micBtn.classList.remove('recording');
+                micBtn.innerText = "🎤 Vastaa äänellä";
+            };
+
+            recognition.start();
+        }
+    </script>
+</body>
+</html>
